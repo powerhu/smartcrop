@@ -1,0 +1,32 @@
+syntax = "proto3";
+
+option go_package = ".;facedetection";
+option java_multiple_files = true;
+option java_package = "com.bytedance.videoarch.facedetection";
+option java_outer_classname = "FaceProto";
+option objc_class_prefix = "RTG";
+
+package FaceDetection;
+
+message DetectedObj {
+  int32 lx = 2;	// left top x
+  int32 ly = 3;	// left top y
+  int32 rx = 4;	// right bottom x
+  int32 ry = 5;	// right bottom y
+  float score = 7; // confidence of object type
+}
+
+message FaceDetRequest {
+  bytes imageData =  1;	// data raw image data in binary
+  string type = 2;	// image type information, could be jpeg, png, jpg
+  float  confThresh = 3; // thresh hold to filter low confidence box
+}
+
+message FaceDetResponse {
+  repeated DetectedObj detObjs= 1; // a list of detected object basic information
+}
+
+service FaceDetService {
+  rpc predict(FaceDetRequest) returns (FaceDetResponse) {} // do face detection
+}
+

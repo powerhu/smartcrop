@@ -29,8 +29,10 @@
 package main
 
 import (
+	"context"
 	"flag"
 	"fmt"
+	"google.golang.org/grpc"
 	"image"
 	"image/jpeg"
 	"image/png"
@@ -39,16 +41,73 @@ import (
 	"log"
 	"os"
 	"sync"
+	"time"
+	fp "path/filepath"
 
 	pigo "github.com/esimov/pigo/core"
 	"github.com/muesli/smartcrop"
 	"github.com/muesli/smartcrop/nfnt"
+	fd "github.com/muesli/smartcrop/facedetection"
 )
 
 var (
 	qThresh float32 = 10.0
 	cascadeFile = "./cascade/facefinder"
+	address     = "localhost:50051"
+	defaultName = "face"
 )
+
+type faceDetFunc func(string) ([]smartcrop.BoostRegion, error)
+
+func loadData(file string) ([]byte, error) {
+	return ioutil.ReadFile(file) // just pass the file name
+}
+
+func faceDetection(file string) ([]smartcrop.BoostRegion, error) {
+	rawImage, err := loadData(file)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "fail to load raw image file:%s", file)
+		return nil, err
+	}
+
+	// Set up a connection to the server.
+	conn, err := grpc.Dial(address, grpc.WithInsecure(), grpc.WithBlock())
+	if err != nil {
+		log.Fatalf("did not connect: %v", err)
+		return nil, err
+	}
+	defer conn.Close()
+
+	c := fd.NewFaceDetServiceClient(conn)
+
+	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
+	defer cancel()
+	request := &fd.FaceDetRequest{
+		ImageData: rawImage,
+		Type: "jpeg",
+		ConfThresh: 0.4,
+	}
+
+	resp, err := c.Predict(ctx, request)
+
+	if err != nil {
+		log.Fatalf("error when predict: %v", err)
+		return nil, err
+	}
+
+	var boosts []smartcrop.BoostRegion
+	for _, det := range resp.DetObjs {
+		boosts = append(boosts, smartcrop.BoostRegion {
+			X: int(det.Lx),
+			Y: int(det.Ly),
+			Width: int(det.Rx - det.Lx),
+			Height: int(det.Ry - det.Ly),
+			Weight: 1.0,
+		})
+	}
+
+	return boosts, err
+}
 
 func main() {
 	input := flag.String("input", "", "input filename")
@@ -64,15 +123,55 @@ func main() {
 		os.Exit(1)
 	}
 
-	classifier, err := initClassifier(cascadeFile)
-
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "fail to load cascade file:%s", cascadeFile)
-		os.Exit(1)
-	}
 
 	// enumerateFolder(*input, *output, *w, *h, *resize, *quality)
-	cropImage(*input, *output, *w, *h, *resize, *quality, classifier)
+
+	var faceDetApi bool = true
+	if faceDetApi {
+		cropImage(*input, *output, *w, *h, *resize, *quality, faceDetection)
+	} else {
+		classifier, err := initClassifier(cascadeFile)
+
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "fail to load cascade file:%s", cascadeFile)
+			os.Exit(1)
+		}
+
+		openCVFaceCall := func(file string) ([]smartcrop.BoostRegion, error) {
+			f, err := os.Open(file)
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "can't open input file: %v\n", err)
+				os.Exit(1)
+			}
+			defer f.Close()
+
+			img, _, err := image.Decode(f)
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "can't decode input file: %v\n", err)
+				return nil, err
+			}
+
+			faces := faceDet(img, classifier)
+
+			// convert dets into boost region
+			var boosts []smartcrop.BoostRegion
+			for _, face := range faces {
+				if face.Q > qThresh {
+					boosts = append(boosts, smartcrop.BoostRegion {
+						X: face.Col - face.Scale/2,
+						Y: face.Row -face.Scale/2,
+						Width: face.Scale,
+						Height: face.Scale,
+						Weight: 1.0,
+					})
+				}
+			}
+
+			return boosts, nil
+		}
+
+		cropImage(*input, *output, *w, *h, *resize, *quality, openCVFaceCall)
+	}
 }
 
 func enumerateFolder(inputDir string, outputDir string, w, h int, resize bool, quality int) {
@@ -81,23 +180,61 @@ func enumerateFolder(inputDir string, outputDir string, w, h int, resize bool, q
 		log.Fatal(err)
 	}
 
-	classifier, err := initClassifier(cascadeFile)
-
+	// Set up a connection to the server.
+	conn, err := grpc.Dial(address, grpc.WithInsecure(), grpc.WithBlock())
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "fail to load cascade file:%s", cascadeFile)
-		os.Exit(1)
+		log.Fatalf("did not connect: %v", err)
+		return
 	}
+	defer conn.Close()
+
+	c := fd.NewFaceDetServiceClient(conn)
 
 	var wg sync.WaitGroup
 	for _, file := range files {
-		if !file.IsDir() {
+		ext := fp.Ext(file.Name())
+		if !file.IsDir() && (ext ==".jpg" || ext == ".png" || ext == ".jpeg") {
 			var filename = file.Name()
 			wg.Add(1)
-			//go func() {
+			go func() {
 				fmt.Println("process:", filename)
-				cropImage(inputDir + "/" + filename, outputDir +"/"+ filename, w, h, resize, quality, classifier)
+				cropImage(inputDir + "/" + filename, outputDir +"/"+ filename, w, h, resize, quality,
+					func(file string) ([]smartcrop.BoostRegion, error) {
+						rawImage, err := loadData(file)
+						if err != nil {
+							fmt.Fprintf(os.Stderr, "fail to load raw image file:%s", file)
+							return nil, err
+						}
+						request := &fd.FaceDetRequest{
+							ImageData: rawImage,
+							Type: "jpeg",
+							ConfThresh: 0.4,
+						}
+						ctx, cancel := context.WithTimeout(context.Background(), time.Hour)
+						defer cancel()
+
+						resp, err := c.Predict(ctx, request)
+
+						if err != nil {
+							log.Fatalf("error when predict: %v", err)
+							return nil, err
+						}
+
+						var boosts []smartcrop.BoostRegion
+						for _, det := range resp.DetObjs {
+							boosts = append(boosts, smartcrop.BoostRegion {
+								X: int(det.Lx),
+								Y: int(det.Ly),
+								Width: int(det.Rx - det.Lx),
+								Height: int(det.Ry - det.Ly),
+								Weight: 1.0,
+							})
+						}
+
+						return boosts, err
+				})
 				wg.Done()
-			//}()
+			}()
 		}
 	}
 
@@ -151,7 +288,7 @@ func faceDet(src image.Image, classifier *pigo.Pigo) []pigo.Detection  {
 	return dets
 }
 
-func cropImage(input string, output string, w, h int, resize bool, quality int, classifier *pigo.Pigo) {
+func cropImage(input string, output string, w, h int, resize bool, quality int, faceCall faceDetFunc) {
 	f, err := os.Open(input)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "can't open input file: %v\n", err)
@@ -165,21 +302,7 @@ func cropImage(input string, output string, w, h int, resize bool, quality int, 
 		os.Exit(1)
 	}
 
-	faces := faceDet(img, classifier)
-
-	// convert dets into boost region
-	var boosts []smartcrop.BoostRegion
-	for _, face := range faces {
-		if face.Q > qThresh {
-			boosts = append(boosts, smartcrop.BoostRegion {
-				X: face.Col - face.Scale/2,
-				Y: face.Row -face.Scale/2,
-				Width: face.Scale,
-				Height: face.Scale,
-				Weight: 1.0,
-			})
-		}
-	}
+	boosts, err := faceCall(input)
 
 	out := output
 	var fOut io.WriteCloser
