@@ -166,16 +166,16 @@ func (o smartcropAnalyzer) FindBestCrop(img image.Image, width, height int, boos
 				uint(float64(img.Bounds().Dx())*prescalefactor),
 				uint(float64(img.Bounds().Dy())*prescalefactor))
 
-			lowimg = toRGBA(smallImg)
+			lowimg = ToRGBA(smallImg)
 		} else {
 			prescalefactor = 1.0
-			lowimg = toRGBA(img)
+			lowimg = ToRGBA(img)
 		}
 
 		o.logger.Log.Println(prescalefactor)
 
 	} else {
-		lowimg = toRGBA(img)
+		lowimg = ToRGBA(img)
 	}
 
 	if o.logger.DebugMode {
@@ -582,7 +582,7 @@ func crops(i image.Image, cropWidth, cropHeight, realMinScale float64) []Crop {
 }
 
 // toRGBA converts an image.Image to an image.RGBA
-func toRGBA(img image.Image) *image.RGBA {
+func ToRGBA(img image.Image) *image.RGBA {
 	switch img.(type) {
 	case *image.RGBA:
 		return img.(*image.RGBA)
@@ -590,4 +590,37 @@ func toRGBA(img image.Image) *image.RGBA {
 	out := image.NewRGBA(img.Bounds())
 	draw.Copy(out, image.Pt(0, 0), img, img.Bounds(), draw.Src, nil)
 	return out
+}
+
+func CombineImage(images []*image.RGBA) *image.RGBA {
+	newY := 0
+	totalX := 0
+	for _, img := range images {
+		rect := img.Bounds()
+		if rect.Max.Y > newY {
+			newY = rect.Max.Y
+		}
+		totalX = totalX + rect.Max.X
+	}
+
+	newRect := image.Rectangle{
+		Min: image.Point{X:0, Y:0},
+		Max: image.Point{X:totalX, Y:newY},
+	}
+
+	newImage := image.NewRGBA(newRect)
+	startX := 0
+
+	for _, img := range images {
+		rect := img.Bounds()
+
+		if rect.Max.Y == newY {
+			draw.Copy(newImage, image.Pt(startX, 0), img, img.Bounds(), draw.Src, nil)
+		} else {
+			draw.Copy(newImage, image.Pt(startX, newY - rect.Max.Y), img, img.Bounds(), draw.Src, nil)
+		}
+		startX = startX + rect.Max.X
+	}
+
+	return newImage
 }

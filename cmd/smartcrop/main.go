@@ -40,14 +40,14 @@ import (
 	"io/ioutil"
 	"log"
 	"os"
+	fp "path/filepath"
 	"sync"
 	"time"
-	fp "path/filepath"
 
 	pigo "github.com/esimov/pigo/core"
 	"github.com/muesli/smartcrop"
-	"github.com/muesli/smartcrop/nfnt"
 	fd "github.com/muesli/smartcrop/facedetection"
+	"github.com/muesli/smartcrop/nfnt"
 )
 
 var (
@@ -124,51 +124,13 @@ func main() {
 	}
 
 
-	// enumerateFolder(*input, *output, *w, *h, *resize, *quality)
+	//enumerateFolder(*input, *output, *w, *h, *resize, *quality)
 
 	var faceDetApi bool = true
 	if faceDetApi {
 		cropImage(*input, *output, *w, *h, *resize, *quality, faceDetection)
 	} else {
-		classifier, err := initClassifier(cascadeFile)
-
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "fail to load cascade file:%s", cascadeFile)
-			os.Exit(1)
-		}
-
-		openCVFaceCall := func(file string) ([]smartcrop.BoostRegion, error) {
-			f, err := os.Open(file)
-			if err != nil {
-				fmt.Fprintf(os.Stderr, "can't open input file: %v\n", err)
-				os.Exit(1)
-			}
-			defer f.Close()
-
-			img, _, err := image.Decode(f)
-			if err != nil {
-				fmt.Fprintf(os.Stderr, "can't decode input file: %v\n", err)
-				return nil, err
-			}
-
-			faces := faceDet(img, classifier)
-
-			// convert dets into boost region
-			var boosts []smartcrop.BoostRegion
-			for _, face := range faces {
-				if face.Q > qThresh {
-					boosts = append(boosts, smartcrop.BoostRegion {
-						X: face.Col - face.Scale/2,
-						Y: face.Row -face.Scale/2,
-						Width: face.Scale,
-						Height: face.Scale,
-						Weight: 1.0,
-					})
-				}
-			}
-
-			return boosts, nil
-		}
+		openCVFaceCall := initOpenCvFaceClassifier(cascadeFile)
 
 		cropImage(*input, *output, *w, *h, *resize, *quality, openCVFaceCall)
 	}
@@ -196,7 +158,7 @@ func enumerateFolder(inputDir string, outputDir string, w, h int, resize bool, q
 		if !file.IsDir() && (ext ==".jpg" || ext == ".png" || ext == ".jpeg") {
 			var filename = file.Name()
 			wg.Add(1)
-			go func() {
+			//go func() {
 				fmt.Println("process:", filename)
 				cropImage(inputDir + "/" + filename, outputDir +"/"+ filename, w, h, resize, quality,
 					func(file string) ([]smartcrop.BoostRegion, error) {
@@ -234,17 +196,17 @@ func enumerateFolder(inputDir string, outputDir string, w, h int, resize bool, q
 						return boosts, err
 				})
 				wg.Done()
-			}()
+			//}()
 		}
 	}
 
 	wg.Wait()
 }
 
-func initClassifier(cascadeFile string) (*pigo.Pigo, error) {
+func initOpenCvFaceClassifier(cascadeFile string) func(file string) ([]smartcrop.BoostRegion, error) {
 	cascadeBytes, err := ioutil.ReadFile(cascadeFile)
 	if err != nil {
-		return nil, err
+		return nil
 	}
 
 	p := pigo.NewPigo()
@@ -252,10 +214,44 @@ func initClassifier(cascadeFile string) (*pigo.Pigo, error) {
 	// the tree depth, the threshold and the prediction from tree's leaf nodes.
 	classifier, err := p.Unpack(cascadeBytes)
 	if err != nil {
-		return nil, err
+		fmt.Fprintf(os.Stderr, "fail to load cascade file:%s", cascadeFile)
+		return nil
 	}
 
-	return classifier, nil
+	openCvFace := func(file string) ([]smartcrop.BoostRegion, error) {
+		f, err := os.Open(file)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "can't open input file: %v\n", err)
+			os.Exit(1)
+		}
+		defer f.Close()
+
+		img, _, err := image.Decode(f)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "can't decode input file: %v\n", err)
+			return nil, err
+		}
+
+		faces := faceDet(img, classifier)
+
+		// convert dets into boost region
+		var boosts []smartcrop.BoostRegion
+		for _, face := range faces {
+			if face.Q > qThresh {
+				boosts = append(boosts, smartcrop.BoostRegion {
+					X: face.Col - face.Scale/2,
+					Y: face.Row -face.Scale/2,
+					Width: face.Scale,
+					Height: face.Scale,
+					Weight: 1.0,
+				})
+			}
+		}
+
+		return boosts, nil
+	}
+
+	return openCvFace
 }
 
 func faceDet(src image.Image, classifier *pigo.Pigo) []pigo.Detection  {
@@ -317,13 +313,18 @@ func cropImage(input string, output string, w, h int, resize bool, quality int, 
 		defer fOut.Close()
 	}
 
-	img = crop(img, w, h, resize, boosts)
+	cbImg := crop(img, w, h, resize, boosts)
+	// var imageList []*image.RGBA
+	// imageList = append(imageList, smartcrop.ToRGBA(img))
+	// newImg := crop(img, w, h, resize, boosts)
+	// imageList = append(imageList, smartcrop.ToRGBA(newImg))
+	// cbImg := smartcrop.CombineImage(imageList)
 
 	switch format {
 	case "png":
-		png.Encode(fOut, img)
+		png.Encode(fOut, cbImg)
 	case "jpeg":
-		jpeg.Encode(fOut, img, &jpeg.Options{Quality: quality})
+		jpeg.Encode(fOut, cbImg, &jpeg.Options{Quality: quality})
 	}
 }
 
