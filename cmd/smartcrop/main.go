@@ -32,6 +32,7 @@ import (
 	"context"
 	"flag"
 	"fmt"
+	"github.com/disintegration/imaging"
 	"google.golang.org/grpc"
 	"image"
 	"image/jpeg"
@@ -124,16 +125,17 @@ func main() {
 	}
 
 
-	//enumerateFolder(*input, *output, *w, *h, *resize, *quality)
+	enumerateFolder(*input, *output, *w, *h, *resize, *quality)
 
-	var faceDetApi bool = true
-	if faceDetApi {
-		cropImage(*input, *output, *w, *h, *resize, *quality, faceDetection)
-	} else {
-		openCVFaceCall := initOpenCvFaceClassifier(cascadeFile)
-
-		cropImage(*input, *output, *w, *h, *resize, *quality, openCVFaceCall)
-	}
+	//var faceDetApi bool = true
+	//if faceDetApi {
+	//	cropImage(*input, *output, *w, *h, *resize, *quality, faceDetection)
+	//} else {
+	//	openCVFaceCall := initOpenCvFaceClassifier(cascadeFile)
+	//
+	//	cropImage(*input, *output, *w, *h, *resize, *quality, openCVFaceCall)
+	//}
+	// centerCropImage(*input, *output, *w, *h, *resize, *quality)
 }
 
 func enumerateFolder(inputDir string, outputDir string, w, h int, resize bool, quality int) {
@@ -313,7 +315,16 @@ func cropImage(input string, output string, w, h int, resize bool, quality int, 
 		defer fOut.Close()
 	}
 
-	cbImg := crop(img, w, h, resize, boosts)
+	oriRatio := float64(img.Bounds().Dx()) / float64(img.Bounds().Dy())
+	wantRatio := float64(w) / float64(h)
+
+	var cbImg image.Image
+	if oriRatio >= wantRatio && oriRatio <= wantRatio * 1.4 {
+		cbImg = centerCrop(img, w, h, 100.0, resize)
+	} else {
+		cbImg = crop(img, w, h, resize, boosts)
+	}
+
 	// var imageList []*image.RGBA
 	// imageList = append(imageList, smartcrop.ToRGBA(img))
 	// newImg := crop(img, w, h, resize, boosts)
@@ -360,4 +371,92 @@ func getCropDimensions(img image.Image, width, height int) (int, int) {
 		}
 	}
 	return width, height
+}
+
+func centerCropImage(input string, output string, w, h int, resize bool, quality int) {
+	f, err := os.Open(input)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "can't open input file: %v\n", err)
+		os.Exit(1)
+	}
+	defer f.Close()
+
+	img, format, err := image.Decode(f)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "can't decode input file: %v\n", err)
+		os.Exit(1)
+	}
+
+	out := output
+	var fOut io.WriteCloser
+	if out == "-" {
+		fOut = os.Stdout
+	} else {
+		fOut, err = os.Create(out)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "can't create output file: %v\n", err)
+			os.Exit(1)
+		}
+		defer fOut.Close()
+	}
+
+	newImg := centerCrop(img, w, h, 100.0, resize)
+
+	switch format {
+	case "png":
+		png.Encode(fOut, newImg)
+	case "jpeg":
+		jpeg.Encode(fOut, newImg, &jpeg.Options{Quality: quality})
+	}
+}
+
+func Round(a float64) int {
+	b := int(a)
+	d := a - float64(b)
+	if d >= 0.5 || d <= -0.5 {
+		return b + 1
+	} else {
+		return b
+	}
+}
+
+func centerCrop(im image.Image, width, height int, sigma float64, resize bool) image.Image {
+	resizer := nfnt.NewDefaultResizer()
+	var startPoint image.Point
+	w, h := im.Bounds().Dx(), im.Bounds().Dy()
+	oriRatio := float64(w) / float64(h)
+	wantRatio := float64(width) / float64(height)
+
+	ratio := wantRatio / oriRatio
+	var x, y int
+	var ww, wh int
+	if oriRatio > wantRatio {
+		//mw := float64(w) * radio
+		x = Round(float64(w) * ratio)
+		y = h
+		ww = w
+		wh = Round(float64(ww) / wantRatio)
+		startPoint.X = 0
+		startPoint.Y = (wh - h) / 2
+	} else {
+		//mw := float64(w) * radio
+		mh := float64(h) * ratio
+		x = w
+		y = Round(float64(h*h) / mh)
+		wh = h
+		ww = Round(float64(h) * wantRatio)
+		startPoint.Y = 0
+		startPoint.X = (ww - w) / 2
+	}
+	bg := imaging.CropCenter(im, x, y)
+	bg = imaging.Resize(bg, ww, wh, imaging.Lanczos)
+	bg = imaging.Blur(bg, sigma)
+
+	bg = imaging.Paste(bg, im, startPoint)
+
+	if resize && (bg.Bounds().Dx() != width || bg.Bounds().Dy() != height) {
+		return resizer.Resize(image.Image(bg), uint(width), uint(height))
+	}
+
+	return bg
 }

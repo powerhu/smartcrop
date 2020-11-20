@@ -3,6 +3,7 @@ module github.com/muesli/smartcrop
 go 1.12
 
 require (
+	github.com/disintegration/imaging v1.6.1
 	github.com/esimov/pigo v1.4.2
 	github.com/golang/protobuf v1.4.2
 	github.com/nfnt/resize v0.0.0-20180221191011-83c6a9932646
