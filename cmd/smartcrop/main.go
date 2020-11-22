@@ -125,17 +125,16 @@ func main() {
 	}
 
 
-	enumerateFolder(*input, *output, *w, *h, *resize, *quality)
+	//enumerateFolder(*input, *output, *w, *h, *resize, *quality)
 
-	//var faceDetApi bool = true
-	//if faceDetApi {
-	//	cropImage(*input, *output, *w, *h, *resize, *quality, faceDetection)
-	//} else {
-	//	openCVFaceCall := initOpenCvFaceClassifier(cascadeFile)
-	//
-	//	cropImage(*input, *output, *w, *h, *resize, *quality, openCVFaceCall)
-	//}
-	// centerCropImage(*input, *output, *w, *h, *resize, *quality)
+	var faceDetApi bool = true
+	if faceDetApi {
+		cropImage(*input, *output, *w, *h, *resize, *quality, faceDetection)
+	} else {
+		openCVFaceCall := initOpenCvFaceClassifier(cascadeFile)
+
+		cropImage(*input, *output, *w, *h, *resize, *quality, openCVFaceCall)
+	}
 }
 
 func enumerateFolder(inputDir string, outputDir string, w, h int, resize bool, quality int) {
