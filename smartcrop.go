@@ -67,7 +67,7 @@ const (
 	scoreDownSample         = 4 // step * minscale rounded down to the next power of two should be good
 	step                    = 8
 	scaleStep               = 0.1
-	minScale                = 0.9
+	minScale                = 1.0
 	maxScale                = 1.0
 	edgeRadius              = 0.4
 	edgeWeight              = -20.0
@@ -246,7 +246,7 @@ func importance(crop Crop, x, y int) float64 {
 	return s + d
 }
 
-func score(sampleOutput *image.RGBA, crop Crop) Score {
+func score(sampleOutput *image.RGBA, crop Crop, boosts []BoostRegion) Score {
 	width := sampleOutput.Bounds().Dx()
 	height := sampleOutput.Bounds().Dy()
 	score := Score{}
@@ -274,7 +274,13 @@ func score(sampleOutput *image.RGBA, crop Crop) Score {
 			score.Skin += r8 / 255.0 * (det + skinBias) * imp
 			score.Detail += det * imp
 			score.Saturation += b8 / 255.0 * (det + saturationBias) * imp
-			score.Boost += (a8 / 255) * imp
+			if a8 !=0 && y >= crop.Min.Y && y <= crop.Max.Y && x >= crop.Min.X && x <= crop.Max.X {
+				if len(boosts) > 1 {
+					score.Boost += (a8 / 255) * 2
+				} else {
+					score.Boost += (a8 / 255) * imp
+				}
+			}
 		}
 	}
 
@@ -374,7 +380,7 @@ func analyse(logger Logger, img *image.RGBA, cropWidth, cropHeight, realMinScale
 	now = time.Now()
 	for _, crop := range cs {
 		nowIn := time.Now()
-		crop.Score = score(sampleOutput, crop)
+		crop.Score = score(sampleOutput, crop, boosts)
 		logger.Log.Println("Time elapsed single-score:", time.Since(nowIn))
 		if crop.totalScore() > topScore {
 			topCrop = crop
