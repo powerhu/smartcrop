@@ -116,6 +116,8 @@ func main() {
 	w := flag.Int("width", 0, "crop width")
 	h := flag.Int("height", 0, "crop height")
 	resize := flag.Bool("resize", true, "resize after cropping")
+	enableCenter := flag.Bool("center", true, "enable auto center crop")
+	faceDetApi := flag.Bool("api", true, "use third-party api to do face detection")
 	quality := flag.Int("quality", 85, "jpeg quality")
 	flag.Parse()
 
@@ -127,13 +129,12 @@ func main() {
 
 	//enumerateFolder(*input, *output, *w, *h, *resize, *quality)
 
-	var faceDetApi bool = true
-	if faceDetApi {
-		cropImage(*input, *output, *w, *h, *resize, *quality, faceDetection)
+	if *faceDetApi {
+		cropImage(*input, *output, *w, *h, *resize, *quality, *enableCenter, faceDetection)
 	} else {
 		openCVFaceCall := initOpenCvFaceClassifier(cascadeFile)
 
-		cropImage(*input, *output, *w, *h, *resize, *quality, openCVFaceCall)
+		cropImage(*input, *output, *w, *h, *resize, *quality, *enableCenter, openCVFaceCall)
 	}
 }
 
@@ -161,7 +162,7 @@ func enumerateFolder(inputDir string, outputDir string, w, h int, resize bool, q
 			wg.Add(1)
 			//go func() {
 				fmt.Println("process:", filename)
-				cropImage(inputDir + "/" + filename, outputDir +"/"+ filename, w, h, resize, quality,
+				cropImage(inputDir + "/" + filename, outputDir +"/"+ filename, w, h, resize, quality, true,
 					func(file string) ([]smartcrop.BoostRegion, error) {
 						rawImage, err := loadData(file)
 						if err != nil {
@@ -285,7 +286,7 @@ func faceDet(src image.Image, classifier *pigo.Pigo) []pigo.Detection  {
 	return dets
 }
 
-func cropImage(input string, output string, w, h int, resize bool, quality int, faceCall faceDetFunc) {
+func cropImage(input string, output string, w, h int, resize bool, quality int, enableCenter bool, faceCall faceDetFunc) {
 	f, err := os.Open(input)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "can't open input file: %v\n", err)
@@ -318,7 +319,7 @@ func cropImage(input string, output string, w, h int, resize bool, quality int, 
 	wantRatio := float64(w) / float64(h)
 
 	var cbImg image.Image
-	if oriRatio >= wantRatio && oriRatio <= wantRatio * 1.4 {
+	if enableCenter && oriRatio >= wantRatio && oriRatio <= wantRatio * 1.4 {
 		cbImg = centerCrop(img, w, h, 100.0, resize)
 	} else {
 		cbImg = crop(img, w, h, resize, boosts)
