@@ -238,7 +238,7 @@ func importance(crop Crop, x, y int) float64 {
 	dy := math.Max(py-1.0+edgeRadius, 0.0)
 	d := (dx*dx + dy*dy) * edgeWeight
 
-	s := 1.41 - math.Sqrt(px*px+py*py)
+	s := 1.414 - math.Sqrt(px*px+py*py)
 	if ruleOfThirds {
 		s += (math.Max(0.0, s+d+0.5) * 1.2) * (thirds(px) + thirds(py))
 	}
@@ -246,20 +246,27 @@ func importance(crop Crop, x, y int) float64 {
 	return s + d
 }
 
-func importanceY(crop Crop, y int) float64 {
+func importanceBoost(crop Crop, x, y int) float64 {
+	xf := float64(x-crop.Min.X) / float64(crop.Dx())
+	yf := float64(y-crop.Min.Y) / float64(crop.Dy())
+
+	px := math.Abs(0.5-xf) * 2.0
+	py := math.Abs(0.5-yf) * 2.0
+
+	s := 1.414 - math.Sqrt(px*px+py*py)
+
+	return s * 4
+}
+
+
+func importanceBoostY(crop Crop, y int) float64 {
 	yf := float64(y-crop.Min.Y) / float64(crop.Dy())
 
 	py := math.Abs(0.5-yf) * 2.0
 
-	dy := math.Max(py-1.0+edgeRadius, 0.0)
-	d := (dy*dy) * edgeWeight
+	s := 1.0 - math.Sqrt(py*py)
 
-	s := 1.41 - math.Sqrt(py*py)
-	if ruleOfThirds {
-		s += (math.Max(0.0, s+d+0.5) * 1.2) * (thirds(py))
-	}
-
-	return s + d
+	return s * 4
 }
 
 func score(sampleOutput *image.RGBA, crop Crop, boosts []BoostRegion) Score {
@@ -290,12 +297,15 @@ func score(sampleOutput *image.RGBA, crop Crop, boosts []BoostRegion) Score {
 			score.Skin += r8 / 255.0 * (det + skinBias) * imp
 			score.Detail += det * imp
 			score.Saturation += b8 / 255.0 * (det + saturationBias) * imp
-			if a8 !=0 && y >= crop.Min.Y && y <= crop.Max.Y && x >= crop.Min.X && x <= crop.Max.X {
-				if len(boosts) > 1 {
-					score.Boost += (a8 / 255) * importanceY(crop, y)
-				} else {
-					score.Boost += (a8 / 255) * imp
-				}
+
+			if a8 ==0 || y < crop.Min.Y || y > crop.Max.Y || x < crop.Min.X || x > crop.Max.X {
+				continue
+			}
+
+			if len(boosts) > 1 {
+				score.Boost += (a8 / 255) * importanceBoostY(crop, y)
+			} else {
+				score.Boost += (a8 / 255) * importanceBoost(crop, x, y)
 			}
 		}
 	}
