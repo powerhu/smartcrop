@@ -118,6 +118,7 @@ func main() {
 	resize := flag.Bool("resize", true, "resize after cropping")
 	enableCenter := flag.Bool("center", true, "enable auto center crop")
 	faceDetApi := flag.Bool("api", true, "use third-party api to do face detection")
+	batchMode := flag.Bool("batch", false, "enable batch mode")
 	quality := flag.Int("quality", 85, "jpeg quality")
 	flag.Parse()
 
@@ -126,15 +127,16 @@ func main() {
 		os.Exit(1)
 	}
 
-
-	//enumerateFolder(*input, *output, *w, *h, *resize, *quality)
-
-	if *faceDetApi {
-		cropImage(*input, *output, *w, *h, *resize, *quality, *enableCenter, faceDetection)
+	if *batchMode {
+		enumerateFolder(*input, *output, *w, *h, *resize, *quality)
 	} else {
-		openCVFaceCall := initOpenCvFaceClassifier(cascadeFile)
+		if *faceDetApi {
+			cropImage(*input, *output, *w, *h, *resize, *quality, *enableCenter, faceDetection)
+		} else {
+			openCVFaceCall := initOpenCvFaceClassifier(cascadeFile)
 
-		cropImage(*input, *output, *w, *h, *resize, *quality, *enableCenter, openCVFaceCall)
+			cropImage(*input, *output, *w, *h, *resize, *quality, *enableCenter, openCVFaceCall)
+		}
 	}
 }
 
@@ -162,7 +164,7 @@ func enumerateFolder(inputDir string, outputDir string, w, h int, resize bool, q
 			wg.Add(1)
 			//go func() {
 				fmt.Println("process:", filename)
-				cropImage(inputDir + "/" + filename, outputDir +"/"+ filename, w, h, resize, quality, true,
+				cropImage(inputDir + "/" + filename, outputDir +"/"+ filename, w, h, resize, quality, false,
 					func(file string) ([]smartcrop.BoostRegion, error) {
 						rawImage, err := loadData(file)
 						if err != nil {

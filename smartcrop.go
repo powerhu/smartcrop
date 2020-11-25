@@ -258,17 +258,6 @@ func importanceBoost(crop Crop, x, y int) float64 {
 	return s * 4
 }
 
-
-func importanceBoostY(crop Crop, y int) float64 {
-	yf := float64(y-crop.Min.Y) / float64(crop.Dy())
-
-	py := math.Abs(0.5-yf) * 2.0
-
-	s := 1.0 - math.Sqrt(py*py)
-
-	return s * 4
-}
-
 func score(sampleOutput *image.RGBA, crop Crop, boosts []BoostRegion) Score {
 	width := sampleOutput.Bounds().Dx()
 	height := sampleOutput.Bounds().Dy()
@@ -302,11 +291,7 @@ func score(sampleOutput *image.RGBA, crop Crop, boosts []BoostRegion) Score {
 				continue
 			}
 
-			if len(boosts) > 1 {
-				score.Boost += (a8 / 255) * importanceBoostY(crop, y)
-			} else {
-				score.Boost += (a8 / 255) * importanceBoost(crop, x, y)
-			}
+			score.Boost += (a8 / 255) * importanceBoost(crop, x, y)
 		}
 	}
 
