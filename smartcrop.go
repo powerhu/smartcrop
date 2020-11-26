@@ -247,6 +247,10 @@ func importance(crop Crop, x, y int) float64 {
 }
 
 func importanceBoost(crop Crop, x, y int) float64 {
+	if crop.Min.X > x || x >= crop.Max.X || crop.Min.Y > y || y >= crop.Max.Y {
+		return outsideImportance
+	}
+
 	xf := float64(x-crop.Min.X) / float64(crop.Dx())
 	yf := float64(y-crop.Min.Y) / float64(crop.Dy())
 
@@ -287,10 +291,7 @@ func score(sampleOutput *image.RGBA, crop Crop, boosts []BoostRegion) Score {
 			score.Detail += det * imp
 			score.Saturation += b8 / 255.0 * (det + saturationBias) * imp
 
-			if a8 ==0 || y < crop.Min.Y || y > crop.Max.Y || x < crop.Min.X || x > crop.Max.X {
-				continue
-			}
-
+			// for boost area, use different importance function
 			score.Boost += (a8 / 255) * importanceBoost(crop, x, y)
 		}
 	}
