@@ -157,54 +157,72 @@ func enumerateFolder(inputDir string, outputDir string, w, h int, resize bool, q
 	c := fd.NewFaceDetServiceClient(conn)
 
 	var wg sync.WaitGroup
-	for _, file := range files {
-		ext := fp.Ext(file.Name())
-		if !file.IsDir() && (ext ==".jpg" || ext == ".png" || ext == ".jpeg") {
-			var filename = file.Name()
-			wg.Add(1)
-			//go func() {
-				fmt.Println("process:", filename)
-				cropImage(inputDir + "/" + filename, outputDir +"/"+ filename, w, h, resize, quality, false,
-					func(file string) ([]smartcrop.BoostRegion, error) {
-						rawImage, err := loadData(file)
-						if err != nil {
-							fmt.Fprintf(os.Stderr, "fail to load raw image file:%s", file)
-							return nil, err
-						}
-						request := &fd.FaceDetRequest{
-							ImageData: rawImage,
-							Type: "jpeg",
-							ConfThresh: 0.4,
-						}
-						ctx, cancel := context.WithTimeout(context.Background(), time.Hour)
-						defer cancel()
+	channelCount := 3
+	fileChannels := make([]chan os.FileInfo, channelCount)
 
-						resp, err := c.Predict(ctx, request)
+	for idx, _ := range fileChannels {
+		fileChannels[idx] = make(chan os.FileInfo)
+		go func(fileChannel <- chan os.FileInfo, jobName string) {
+			for file := range fileChannel {
+				ext := fp.Ext(file.Name())
+				if !file.IsDir() && (ext ==".jpg" || ext == ".png" || ext == ".jpeg") {
+					var filename = file.Name()
+					fmt.Fprintf(os.Stdout, "task:%s process:%s\n", jobName, filename)
+					cropImage(inputDir+"/"+filename, outputDir+"/"+filename, w, h, resize, quality, false,
+						func(file string) ([]smartcrop.BoostRegion, error) {
+							rawImage, err := loadData(file)
+							if err != nil {
+								fmt.Fprintf(os.Stderr, "fail to load raw image file:%s", file)
+								return nil, err
+							}
+							request := &fd.FaceDetRequest{
+								ImageData:  rawImage,
+								Type:       "jpeg",
+								ConfThresh: 0.4,
+							}
+							ctx, cancel := context.WithTimeout(context.Background(), time.Hour)
+							defer cancel()
 
-						if err != nil {
-							log.Fatalf("error when predict: %v", err)
-							return nil, err
-						}
+							resp, err := c.Predict(ctx, request)
 
-						var boosts []smartcrop.BoostRegion
-						for _, det := range resp.DetObjs {
-							boosts = append(boosts, smartcrop.BoostRegion {
-								X: int(det.Lx),
-								Y: int(det.Ly),
-								Width: int(det.Rx - det.Lx),
-								Height: int(det.Ry - det.Ly),
-								Weight: 1.0,
-							})
-						}
+							if err != nil {
+								log.Fatalf("error when predict: %v", err)
+								return nil, err
+							}
 
-						return boosts, err
-				})
+							var boosts []smartcrop.BoostRegion
+							for _, det := range resp.DetObjs {
+								boosts = append(boosts, smartcrop.BoostRegion{
+									X:      int(det.Lx),
+									Y:      int(det.Ly),
+									Width:  int(det.Rx - det.Lx),
+									Height: int(det.Ry - det.Ly),
+									Weight: 1.0,
+								})
+							}
+
+							return boosts, err
+						})
+
+				}
+
 				wg.Done()
-			//}()
-		}
+			}
+			fmt.Fprintf(os.Stdout, "job:%s image crop finished\n", jobName)
+		} (fileChannels[idx], fmt.Sprintf("job_%d", idx))
+	}
+
+	for idx, file := range files {
+		wg.Add(1)
+		fileChannels[idx%len(fileChannels)] <- file
+	}
+
+	for _, fileChannel :=  range fileChannels {
+		close(fileChannel)
 	}
 
 	wg.Wait()
+	fmt.Println("wait for image process task to finish")
 }
 
 func initOpenCvFaceClassifier(cascadeFile string) func(file string) ([]smartcrop.BoostRegion, error) {
