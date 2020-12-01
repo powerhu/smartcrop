@@ -223,9 +223,10 @@ func bounds(l float64) float64 {
 	return math.Min(math.Max(l, 0.0), 255)
 }
 
-func importance(crop Crop, x, y int) float64 {
+// return ordinary importance and boost area importance
+func importance(crop Crop, x, y int) (float64, float64) {
 	if crop.Min.X > x || x >= crop.Max.X || crop.Min.Y > y || y >= crop.Max.Y {
-		return outsideImportance
+		return outsideImportance, outsideImportance
 	}
 
 	xf := float64(x-crop.Min.X) / float64(crop.Dx())
@@ -243,23 +244,7 @@ func importance(crop Crop, x, y int) float64 {
 		s += (math.Max(0.0, s+d+0.5) * 1.2) * (thirds(px) + thirds(py))
 	}
 
-	return s + d
-}
-
-func importanceBoost(crop Crop, x, y int) float64 {
-	if crop.Min.X > x || x >= crop.Max.X || crop.Min.Y > y || y >= crop.Max.Y {
-		return outsideImportance
-	}
-
-	xf := float64(x-crop.Min.X) / float64(crop.Dx())
-	yf := float64(y-crop.Min.Y) / float64(crop.Dy())
-
-	px := math.Abs(0.5-xf) * 2.0
-	py := math.Abs(0.5-yf) * 2.0
-
-	s := 1.414 - math.Sqrt(px*px+py*py)
-
-	return s * 4
+	return s + d, s * 4
 }
 
 func score(sampleOutput *image.RGBA, crop Crop, boosts []BoostRegion) Score {
@@ -277,7 +262,7 @@ func score(sampleOutput *image.RGBA, crop Crop, boosts []BoostRegion) Score {
 			sy := int(float32(y) * invDownSample)
 			sx := int(float32(x) * invDownSample)
 
-			imp := importance(crop, x, y)
+			imp, impBoost := importance(crop, x, y)
 
 			c := sampleOutput.RGBAAt(sx, sy)
 			r8 := float64(c.R)
@@ -290,9 +275,7 @@ func score(sampleOutput *image.RGBA, crop Crop, boosts []BoostRegion) Score {
 			score.Skin += r8 / 255.0 * (det + skinBias) * imp
 			score.Detail += det * imp
 			score.Saturation += b8 / 255.0 * (det + saturationBias) * imp
-
-			// for boost area, use different importance function
-			score.Boost += (a8 / 255) * importanceBoost(crop, x, y)
+			score.Boost += (a8 / 255) * impBoost
 		}
 	}
 

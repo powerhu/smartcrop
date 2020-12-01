@@ -93,7 +93,7 @@ func drawDebugCrop(topCrop Crop, o *image.RGBA) {
 			g8 := float64(g >> 8)
 			b8 := uint8(b >> 8)
 
-			imp := importance(topCrop, x, y)
+			imp, _ := importance(topCrop, x, y)
 
 			if imp > 0 {
 				g8 += imp * 32
