@@ -48,7 +48,7 @@ var (
 // Moved here and unexported to decouple the resizer implementation.
 func smartCrop(img image.Image, width, height int) (image.Rectangle, error) {
 	analyzer := NewAnalyzer(nfnt.NewDefaultResizer())
-	return analyzer.FindBestCrop(img, width, height)
+	return analyzer.FindBestCrop(img, width, height, nil)
 }
 
 type SubImager interface {
@@ -68,7 +68,7 @@ func TestCrop(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	expected := image.Rect(464, 24, 719, 279)
+	expected := image.Rect(115, 0, 399, 284)
 	if topCrop != expected {
 		t.Fatalf("expected %v, got %v", expected, topCrop)
 	}
@@ -115,7 +115,7 @@ func BenchmarkEdge(b *testing.B) {
 		b.Fatal(err)
 	}
 
-	rgbaImg := toRGBA(img)
+	rgbaImg := ToRGBA(img)
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		o := image.NewRGBA(img.Bounds())
