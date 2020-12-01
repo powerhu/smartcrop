@@ -240,11 +240,13 @@ func importance(crop Crop, x, y int) (float64, float64) {
 	d := (dx*dx + dy*dy) * edgeWeight
 
 	s := 1.414 - math.Sqrt(px*px+py*py)
+	// make a temp copy of s
+	sBoost := s
 	if ruleOfThirds {
 		s += (math.Max(0.0, s+d+0.5) * 1.2) * (thirds(px) + thirds(py))
 	}
 
-	return s + d, s * 4
+	return s + d, sBoost * 4
 }
 
 func score(sampleOutput *image.RGBA, crop Crop, boosts []BoostRegion) Score {
