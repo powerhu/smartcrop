@@ -249,7 +249,7 @@ func importance(crop Crop, x, y int) (float64, float64) {
 	return s + d, sBoost * 4
 }
 
-func score(sampleOutput *image.RGBA, crop Crop, boosts []BoostRegion) Score {
+func score(sampleOutput *image.RGBA, crop Crop) Score {
 	width := sampleOutput.Bounds().Dx()
 	height := sampleOutput.Bounds().Dy()
 	score := Score{}
@@ -377,7 +377,7 @@ func analyse(logger Logger, img *image.RGBA, cropWidth, cropHeight, realMinScale
 	now = time.Now()
 	for _, crop := range cs {
 		nowIn := time.Now()
-		crop.Score = score(sampleOutput, crop, boosts)
+		crop.Score = score(sampleOutput, crop)
 		logger.Log.Println("Time elapsed single-score:", time.Since(nowIn))
 		if crop.totalScore() > topScore {
 			topCrop = crop
